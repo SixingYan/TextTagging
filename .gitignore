@@ -247,6 +247,8 @@ $RECYCLE.BIN/
 *.pk
 *.csv
 *.pickle
+*.txt
+*.pytorch
 *.bin
 *.tmp
 *.ft
