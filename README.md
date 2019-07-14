@@ -21,14 +21,25 @@
 
 # 逻辑结构
 
-在main里完成调用train
+在seq_main里完成调用train
 
 把数据载入、模型初始化、训练模块分开
 
 
+在vec_main里做预训练
+
+
+
 # 迭代
 ## v0
-BiGRU
+BiGRU+CRF
+BiGRU+Att
+BiGRU+Att + CRF
+
+Data explore
+
+FastText skipgram
+FastText CBOW
 
 
 

@@ -1,12 +1,38 @@
-from typing import Dict
+from typing import Dict, List
 from const import START_TAG, STOP_TAG
+import torch
+from torch import nn
+
+
+def argmax(vec):
+    # return the argmax as a python int
+    _, idx = torch.max(vec, 1)
+    return idx.item()
+
+
+# Compute log sum exp in a numerically stable way for the forward algorithm
+def log_sum_exp(vec):
+    '''
+        input: 1 by tarset_size
+        output: 一个tensor值
+    '''
+    max_score = vec[0, argmax(vec)]
+
+    # vec.size()[1] : tarset_size
+    # 把这个值拓成 1 by tarset_size
+    max_score_broadcast = max_score.view(1, -1).expand(1, vec.size()[1])
+
+    # 实现技巧，减去最大值，然后再去算exp
+    # 因为已经减了，max_score那一项为0，所以要在前面加回来
+    return max_score + \
+        torch.log(torch.sum(torch.exp(vec - max_score_broadcast)))
 
 
 class Model(nn.Module):
     """BiGRU + CRF"""
 
-    def __init__(self, vocab_size, tag_to_ix: Dict, embed_dim=10, hid_dim=10):
-        super(BiLSTM_CRF, self).__init__()
+    def __init__(self, vocab_size, tag_to_ix: Dict, embed_dim=10, hid_dim=20):
+        super(Model, self).__init__()
         self.embed_dim = embed_dim
         self.hid_dim = hid_dim
         self.vocab_size = vocab_size
@@ -16,7 +42,7 @@ class Model(nn.Module):
         self.word_embeds = nn.Embedding(vocab_size, embed_dim)
 
         self.rnn = nn.GRU(embed_dim, hid_dim // 2,
-                          num_layers=1, bidirectional=True)
+                          num_layers=2, bidirectional=True)
 
         # Maps the output of the LSTM into tag space.
         # Input: (N,∗,in_features) where *∗ means any number of additional dimensions
@@ -34,13 +60,13 @@ class Model(nn.Module):
         self.transitions.data[tag_to_ix[START_TAG], :] = -10000
         self.transitions.data[:, tag_to_ix[STOP_TAG]] = -10000
 
-        self.hidden = self.init_hidden()
+        #self.hidden = self.init_hidden()
 
-    def init_hidden(self):
-        return (torch.randn(2, 1, self.hid_dim // 2),    # h_{t-1} 因为是前后双向，所以是两个神经元 2
-                torch.randn(2, 1, self.hid_dim // 2))    # c_{t-1}
+    # def init_hidden(self):
+    #    return (torch.randn(2, 1, self.hid_dim // 2),    # h_{t-1} 因为是前后双向，所以是两个神经元 2
+    #            torch.randn(2, 1, self.hid_dim // 2))    # c_{t-1}
 
-    def _forward_alg(self, feats: TorchTensor):
+    def _forward_alg(self, feats):
         '''
             input: len(sentence) by self.tagset_size
             output: 一个tensor值
@@ -67,9 +93,9 @@ class Model(nn.Module):
 
         return alpha
 
-    def _get_lstm_features(self, sentence: TorchTensor)->TorchTensor:
+    def _get_lstm_features(self, sentence):
 
-        self.hidden = self.init_hidden()
+        #self.hidden = self.init_hidden()
 
         embeds = self.word_embeds(sentence).view(
             len(sentence), 1, -1)  # len(sentence) by 1 by embed_dim
@@ -79,20 +105,20 @@ class Model(nn.Module):
         # output of shape (seq_len, batch, num_directions * hidden_size):
         # output features (h_t) from the last layer of the LSTM
         # 这里num_directions=2 和input的size已经不一样了
-        lstm_out, self.hidden = self.lstm(embeds, self.hidden)
+        lstm_out, _ = self.rnn(embeds)  # , self.hidden)
 
         # the directions can be separated using
         # output.view(seq_len, batch, num_directions, hidden_size), with
         # forward and backward being direction 0 and 1 respectively. Similarly,
         # the directions can be separated in the packed case.
         # 所以这里相当于把前后两个拼在一起了，所以这个时候才能用hidden_dim，因为输入的分别是hidden_dim // 2
-        lstm_out = lstm_out.view(len(sentence), self.hidden_dim)
+        lstm_out = lstm_out.view(len(sentence), self.hid_dim)
 
         # Input: (N,∗,in_features) where *∗ means any number of additional dimensions
         # Output: (N,∗,out_features) 除最后一个维度外，所有维度的形状都与输入相同
         # 这里N是句子长度len(sentence)
         # 输出是 len(sentence) by self.tagset_size
-        lstm_feats = self.hidden2tag(lstm_out)
+        lstm_feats = self.hid2tag(lstm_out)
 
         return lstm_feats
 
@@ -129,7 +155,7 @@ class Model(nn.Module):
 
         # Initialize the viterbi variables in log space
         # 1 by tagset_size
-        init_vvars = torch.full((1, self.tagset_size), -10000.)
+        init_vvars = torch.full((1, self.tags_size), -10000.)
         init_vvars[0][self.tag_to_ix[START_TAG]] = 0
 
         # forward_var at step i holds the viterbi variables for step i-1
@@ -141,7 +167,7 @@ class Model(nn.Module):
             bptrs_t = []  # holds the backpointers for this step
             viterbivars_t = []  # holds the viterbi variables for this step
 
-            for next_tag in range(self.tagset_size):
+            for next_tag in range(self.tags_size):
 
                 next_tag_var = forward_var + self.transitions[next_tag]
                 best_tag_id = argmax(next_tag_var)
@@ -176,16 +202,17 @@ class Model(nn.Module):
         assert start == self.tag_to_ix[START_TAG]  # Sanity check
         best_path.reverse()  # 把从后向前的路径正过来
         return path_score, best_path
-
-    def neg_log_likelihood(self, sentence: TorchTensor, tags: TorchTensor):
+    '''
+    def neg_log_likelihood(self, sentence, tags):
 
         feats = self._get_lstm_features(sentence)
         forward_score = self._forward_alg(feats)
         gold_score = self._score_sentence(feats, tags)
 
         return forward_score - gold_score
+    '''
 
     def forward(self, sentence):  # dont confuse this with _forward_alg above.
         lstm_feats = self._get_lstm_features(sentence)
         score, tag_seq = self._viterbi_decode(lstm_feats)
-        return score, tag_seq
+        return tag_seq  # score,
