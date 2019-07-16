@@ -66,11 +66,11 @@ def retest():
     util.output(tsttag)
 
 
-def model01(epoch_num=3):
+def model01(epoch_num=2):
     trn_X, trn_y, tst, word_to_ix = util.load()
     # train
-    model = Model(len(word_to_ix), tag_to_ix, 300, 200,3)
-    optimizer = optim.SGD(model.parameters(), lr=0.01, weight_decay=1e-4)
+    model = Model(len(word_to_ix), tag_to_ix, 200, 200,2)
+    optimizer = optim.SGD(model.parameters(), lr=0.001, weight_decay=1e-4)
     
     model.train()
     for epoch in range(epoch_num):
