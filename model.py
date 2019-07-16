@@ -4,6 +4,7 @@ import torch
 from torch import nn
 import util
 
+
 def argmax(vec):
     # return the argmax as a python int
     _, idx = torch.max(vec, 1)
@@ -31,7 +32,7 @@ def log_sum_exp(vec):
 class Model(nn.Module):
     """BiGRU + CRF"""
 
-    def __init__(self, vocab_size, tag_to_ix: Dict, embed_dim=10, hid_dim=20, layer_num=2):
+    def __init__(self, vocab_size, tag_to_ix: Dict, embed_dim=10, hid_dim=20, layer_num=3):
         super(Model, self).__init__()
         self.embed_dim = embed_dim
         self.hid_dim = hid_dim
@@ -39,12 +40,13 @@ class Model(nn.Module):
         self.tag_to_ix = tag_to_ix
         self.tags_size = len(tag_to_ix)
         self.layer_num = layer_num
+
         self.word_embeds = nn.Embedding(vocab_size, embed_dim)
+        util.init_embedding(self.word_embeds)
 
         self.rnn = nn.LSTM(embed_dim, hid_dim // 2,
                            num_layers=self.layer_num, bidirectional=True, dropout=0.1)
-
-        util.init_linear(self.rnn)
+        util.init_rnn(self.rnn)
         # Maps the output of the LSTM into tag space.
         # Input: (N,∗,in_features) where *∗ means any number of additional dimensions
         # Output: (N,∗,out_features) 除最后一个维度外，所有维度的形状都与输入相同

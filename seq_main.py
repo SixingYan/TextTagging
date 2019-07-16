@@ -2,17 +2,19 @@ import torch
 import torch.utils.data
 from torch import nn, optim
 from tqdm import tqdm
-#tqdm.pandas(desc='Progress')
+# tqdm.pandas(desc='Progress')
 import numpy as np
-from Modeling import model_v0, model_v01
+#from Modeling import model_v0, model_v01
+from model import Model
 
 from training import train, test
 import util
 from const import tag_to_ix, ix_to_tag
-
+import const
+import os
 #from sklearn.model_selection import train_test_split
 
-
+"""
 def model0(batch_size=1):
 
     # init
@@ -40,25 +42,39 @@ def model0(batch_size=1):
     # train
     model = model_v0.Model(len(word_to_ix), len(tag_to_ix))
     lossfunc = nn.NLLLoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.001)
+    optimizer = optim.SGD(model.parameters(), lr=0.01, weight_decay=0.0001)
     model = train(trn_loader, model, lossfunc, optimizer)
 
     # test
     tsttag = test(tst_tensor, model)
     util.output(tsttag)
 
+"""
+def retest():
+    trn_X, trn_y, tst, word_to_ix = util.load()
+    model = model_v01.Model(len(word_to_ix), tag_to_ix, 300, 200)
+    model.load_state_dict(torch.load(
+        os.path.join(const.MODELPATH, 'bigrucrf.pytorch')))
+
+    tsttag = []
+    model.eval()
+    for i in tqdm(range(len(tst))):
+        x = torch.tensor(tst[i], dtype=torch.long)
+        tag = model(x)
+        tsttag.append([ix_to_tag[t] for t in tag])
+
+    util.output(tsttag)
+
 
 def model01(epoch_num=3):
     trn_X, trn_y, tst, word_to_ix = util.load()
     # train
-    model = model_v01.Model(len(word_to_ix), tag_to_ix, 100, 200)
+    model = Model(len(word_to_ix), tag_to_ix, 300, 200,3)
     optimizer = optim.SGD(model.parameters(), lr=0.01, weight_decay=1e-4)
-    #printevery = int(len(trn_X) * 0.05)
+    
     model.train()
     for epoch in range(epoch_num):
         for i in tqdm(np.random.permutation(range(len(trn_X)))):
-            #if i % printevery == 0:
-            #    print('now is {:.2f}'.format(i/len(trn_X)))
             x = torch.tensor(trn_X[i], dtype=torch.long)
             y = torch.tensor(trn_y[i], dtype=torch.long)
 
@@ -72,7 +88,8 @@ def model01(epoch_num=3):
 
             loss.backward()
             optimizer.step()
-    util.savemodel(model, 'bigrucrf.pytorch')
+
+    util.savemodel(model, 'bigrucrf716.pytorch')
 
     # test
     tsttag = []
@@ -81,7 +98,7 @@ def model01(epoch_num=3):
         x = torch.tensor(tst[i], dtype=torch.long)
         tag = model(x)
         tsttag.append([ix_to_tag[t] for t in tag])
-    
+
     util.output(tsttag)
 
 
