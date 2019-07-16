@@ -139,7 +139,7 @@ def init_rnn(input_rnn, rnn='lstm'):
         for ind in range(0, input_rnn.num_layers):
             weight = eval('input_rnn.weight_ih_l' + str(ind) + '_reverse')
             for i in range(part_num):
-                nn.init.xavier_norma*l_(
+                nn.init.xavier_normal_(
                     weight[hid_size * i:hid_size * (i + 1), :])
 
             weight = eval('input_rnn.weight_hh_l' + str(ind) + '_reverse')
