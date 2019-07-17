@@ -30,7 +30,7 @@ class Model(nn.Module):
                  wrd_embed_dim=100, hid_dim=200, layer_num=2,
                  use_crf=True,
                  use_cnn=False, cnn_dim=50, chr_embed_dim=50,
-                 dropout=0.3):
+                 dropout=0.3, device='cpu'):
         super(Model, self).__init__()
         self.embed_dim = wrd_embed_dim
         self.hid_dim = hid_dim
@@ -40,6 +40,7 @@ class Model(nn.Module):
         self.layer_num = layer_num
         self.use_cnn = use_cnn
         self.use_crf = use_crf
+        self.device = device
 
         # 这里将来用预训练的embedding
         self.word_embeds = nn.Embedding(vocab_size, wrd_embed_dim)
@@ -52,7 +53,8 @@ class Model(nn.Module):
             kernel_num = 3
             self.char_embeds = nn.Embedding(vocab_size, self.chr_embed_dim)
             self.char_cnn = nn.Conv2d(in_channels=1, out_channels=self.cnn_dim,
-                                      kernel_size=(kernel_num, self.chr_embed_dim),
+                                      kernel_size=(
+                                          kernel_num, self.chr_embed_dim),
                                       padding=(2, 0))
             self.embed_dim += cnn_dim
 
@@ -74,8 +76,10 @@ class Model(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def init_hidden(self):
-        return (nn.init.xavier_uniform_(torch.empty(2 * self.layer_num, 1, self.hid_dim // 2), gain=nn.init.calculate_gain('relu')),    # h_{t-1} 因为是前后双向，所以是两个神经元 2
-                nn.init.xavier_uniform_(torch.empty(2 * self.layer_num, 1, self.hid_dim // 2), gain=nn.init.calculate_gain('relu')))    # c_{t-1}
+        return (nn.init.xavier_uniform_(torch.empty(2 * self.layer_num, 1, self.hid_dim // 2, device=self.device),
+                                        gain=nn.init.calculate_gain('relu')),
+                nn.init.xavier_uniform_(torch.empty(2 * self.layer_num, 1, self.hid_dim // 2, device=self.device),
+                                        gain=nn.init.calculate_gain('relu')))
 
     def _forward_alg(self, feats):
         init_alphas = torch.full((1, self.tags_size), -10000.)
@@ -103,7 +107,8 @@ class Model(nn.Module):
         if self.use_cnn:
             cnn_out = self.char_cnn(self.char_embeds(sentence).unsqueeze(1))
             cnn_embeds = nn.functional.max_pool2d(cnn_out,
-                                                  kernel_size=(cnn_out.size(2), 1)
+                                                  kernel_size=(
+                                                      cnn_out.size(2), 1)
                                                   ).view(cnn_out.size(0),
                                                          self.cnn_dim)
             embeds = torch.cat((embeds, cnn_embeds), 1)
@@ -111,7 +116,6 @@ class Model(nn.Module):
         embeds = self.dropout(embeds.unsqueeze(1))  # 在这里加上一维
 
         lstm_out, _ = self.rnn(embeds, self.init_hidden())
-        #lstm_out = lstm_out.view(len(sentence), self.hid_dim)
         lstm_out = self.dropout(lstm_out.squeeze())
         lstm_feats = self.hid2tag(lstm_out)
         return lstm_feats
@@ -144,26 +148,15 @@ class Model(nn.Module):
 
             forward_var = (torch.cat(viterbivars_t) + feat).view(1, -1)
             backpointers.append(bptrs_t)
-        # 最后backpointers的size为 len(sentences) by tagset_size
-
-        # Transition to STOP_TAG
         terminal_var = forward_var + \
-            self.transitions[self.tag_to_ix[STOP_TAG]]  # 其他标签到STOP_TAG的转移概率
-        # 最后一定是转移到STOP_TAG
-
-        # 最后一个词的最佳tag标签
+            self.transitions[self.tag_to_ix[STOP_TAG]]
         best_tag_id = argmax(terminal_var)
         path_score = terminal_var[0][best_tag_id]
-
-        # Follow the back pointers to decode the best path.
         best_path = [best_tag_id]
-        for bptrs_t in reversed(backpointers):  # 从后向前走，找到一个best路径
-            # 后一个最佳tag是best_tag_id，那么当前这个best_tag_id 是谁
+        for bptrs_t in reversed(backpointers):
             best_tag_id = bptrs_t[best_tag_id]
-            # 把这个加入最佳路径
             best_path.append(best_tag_id)
 
-        # Pop off the start tag (we dont want to return that to the caller)
         start = best_path.pop()
         assert start == self.tag_to_ix[START_TAG]  # Sanity check
         best_path.reverse()  # 把从后向前的路径正过来
@@ -173,9 +166,9 @@ class Model(nn.Module):
 
         return self.neg_log_likelihood(sentence, tags)
 
-    def neg_log_likelihood(self, sentence, tags):
-        feats = self._get_lstm_features(sentence)
-
+    def neg_log_likelihood(self, sentence, tags, feats=None):
+        if feats is None:
+            feats = self._get_lstm_features(sentence)
         if self.use_crf:
             forward_score = self._forward_alg(feats)
             gold_score = self._score_sentence(feats, tags)
@@ -188,7 +181,8 @@ class Model(nn.Module):
         nil = self.neg_log_likelihood(sentence, tags)
         return (1 - np.exp(-nil))**gamma * nil
 
-    def forward(self, sentence):  # dont confuse this with _forward_alg above.
-        lstm_feats = self._get_lstm_features(sentence)
+    def forward(self, sentence, lstm_feats=None):  # dont confuse this with _forward_alg above.
+        if lstm_feats is None:
+            lstm_feats = self._get_lstm_features(sentence)
         score, tag_seq = self._viterbi_decode(lstm_feats)
         return tag_seq  # score,
