@@ -58,11 +58,11 @@ def _merge(chars: List, tags: List):
 def load():
     """"""
     trn_X = fromPickle(os.path.join(
-        const.DATAPATH, 'trn_X_token.pickle'))#[:10]
+        const.DATAPATH, 'trn_X_token.pickle'))[:10]
     trn_y = fromPickle(os.path.join(
-        const.DATAPATH, 'trn_y_token.pickle'))#[:10]
+        const.DATAPATH, 'trn_y_token.pickle'))[:10]
     tst = fromPickle(os.path.join(
-        const.DATAPATH, 'tst_X_token.pickle'))#[:10]
+        const.DATAPATH, 'tst_X_token.pickle'))[:10]
     word_to_ix = fromPickle(os.path.join(
         const.DATAPATH, 'word_to_ix.pickle'))
 
