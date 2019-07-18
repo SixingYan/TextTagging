@@ -86,7 +86,7 @@ And for more, read the papers that introduced these topics:
 from __future__ import unicode_literals, print_function, division
 from io import open
 import unicodedata
-import string
+#import string
 import re
 import random
 
@@ -623,11 +623,13 @@ def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, deco
             decoder_input = topi.squeeze().detach()  # detach from history as input
 
             # 这里output是有hidden_size的长度，每个都有值，然后target就一个，所以每个值都要算过去
+            print(decoder_output)
+            print(target_tensor[di])
             loss += criterion(decoder_output, target_tensor[di])
             # item 是取出它的数值
             if decoder_input.item() == EOS_token:
                 break
-
+            break
     loss.backward()
 
     encoder_optimizer.step()
@@ -718,7 +720,7 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 import matplotlib.ticker as ticker
-import numpy as np
+#import numpy as np
 
 
 def showPlot(points):

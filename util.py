@@ -20,7 +20,7 @@ def output(tsttag: List):
 
     """
     with open(os.path.join(const.DATAPATH, 'test.txt'), 'r') as f:
-        lines = f.readlines()#[:10]
+        lines = f.readlines()[:10]
         chars = [l.strip().split('_') for l in lines]
     assert len(chars) == len(tsttag)
 

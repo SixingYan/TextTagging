@@ -44,7 +44,6 @@ class Model(nn.Module):
 
         # 这里将来用预训练的embedding
         self.word_embeds = nn.Embedding(vocab_size, wrd_embed_dim)
-        # util.init_embedding(self.word_embeds)
 
         # 多一层embed
         if self.use_cnn is True:
@@ -186,3 +185,71 @@ class Model(nn.Module):
             lstm_feats = self._get_lstm_features(sentence)
         score, tag_seq = self._viterbi_decode(lstm_feats)
         return tag_seq  # score,
+
+
+class EncoderRNN(nn.Module):
+
+    def __init__(self, input_size, in_hdim, out_hdim, device='cpu', bi=2, num_layers=2):
+        super(EncoderRNN, self).__init__()
+        self.num_layers = num_layers
+        self.in_hdim = in_hdim
+        self.device = device
+        self.embedding = nn.Embedding(input_size, in_hdim)
+        self.bi = bi
+        self.rnn = nn.LSTM(in_hdim, out_hdim, num_layers=num_layers,
+                           bidirectional=True if bi == 2 else False)
+        util.init_rnn(self.rnn)
+
+    def forward(self, sentence, hidden):
+        embedded = self.embedding(sentence).view(1, 1, -1)
+        output = embedded
+        output, (hidden, cell) = self.rnn(output, hidden)
+        return output, hidden
+
+    def initHidden(self):
+        return torch.zeros(1, 1, self.in_hdim, device=self.device)
+
+    def init_hidden(self):
+        return (nn.init.xavier_uniform_(torch.empty(self.bi * self.num_layers, 1, self.in_hdim, device=self.device),
+                                        gain=nn.init.calculate_gain('relu')),
+                nn.init.xavier_uniform_(torch.empty(self.bi * self.num_layers, 1, self.in_hdim, device=self.device),
+                                        gain=nn.init.calculate_gain('relu')))
+
+
+class AttnDecoderRNN(nn.Module):
+
+    def __init__(self, hidden_size, tag_size, bi=1, dropout=0.1, max_length=1000):
+        super(AttnDecoderRNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.tag_size = tag_size
+        self.max_length = max_length
+        self.bi = bi
+
+        self.embedding = nn.Embedding(self.tag_size, self.hidden_size)
+        self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
+        self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
+        self.dropout = nn.Dropout(dropout)
+
+        self.rnn = nn.GRU(self.hidden_size, self.hidden_size)
+        util.init_rnn(self.rnn)
+
+        self.hid2tag = nn.Linear(self.hidden_size, self.tag_size)
+        util.init_linear(self.hid2tag)
+
+    def forward(self, input, hidden, encoder_outputs):
+        embedded = self.embedding(input).view(1, 1, -1)
+        embedded = self.dropout(embedded)
+        attn_weights = F.softmax(
+            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
+        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
+                                 encoder_outputs.unsqueeze(0))
+        output = torch.cat((embedded[0], attn_applied[0]), 1)
+        output = self.attn_combine(output).unsqueeze(0)
+
+        output = F.relu(output)
+        output, hidden = self.rnn(output, hidden)
+        output = F.log_softmax(self.hid2tag(output[0]), dim=1)
+        return output, hidden
+
+    def initHidden(self):
+        return torch.zeros(1, 1, self.hidden_size, device=self.device)
