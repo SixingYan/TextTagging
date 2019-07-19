@@ -17,7 +17,6 @@ from sklearn.model_selection import train_test_split
 
 
 def test():
-    trn_X, trn_y, tst, word_to_ix = util.load()
     device = 'cpu'
     teacher_forcing_ratio = 0.3
     trn_X, trn_y, tst, word_to_ix = util.load()

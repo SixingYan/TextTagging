@@ -279,7 +279,6 @@ class AttnDecoderRNN(nn.Module):
             torch.empty(1, 1, self.hidden_size, device=self.device),
             gain=nn.init.calculate_gain('relu'))
         """
-from torch.autograd import Variable
 
 
 class FocalLoss(nn.Module):
@@ -338,3 +337,87 @@ class FocalLoss(nn.Module):
         else:
             loss = batch_loss.sum()
         return loss
+
+
+class CRF(nn.Module):
+
+    def __init__(self, hid_dim: int, tag_to_ix: Dict):
+        super(CRF, self).__init__()
+        self.tag_to_ix = tag_to_ix
+        self.tags_size = len(tag_to_ix)
+
+        self.hidden2tag = nn.Linear(hid_dim, self.tags_size)
+
+        self.transitions = nn.Parameter(torch.nn.init.kaiming_uniform_(
+            torch.empty(self.tags_size, self.tags_size)))
+        self.transitions.data[tag_to_ix[START_TAG], :] = -10000
+        self.transitions.data[:, tag_to_ix[STOP_TAG]] = -10000
+
+    def _forward_alg(self, feats):
+        init_alphas = torch.full((1, self.tags_size), -10000.)
+        init_alphas[0][self.tag_to_ix[START_TAG]] = 0.
+        forward_var = init_alphas
+        # Iterate through the sentence
+        for feat in feats:
+            alphas_t = []
+            for next_tag in range(self.tags_size):
+                emit_score = feat[next_tag].view(
+                    1, -1).expand(1, self.tags_size)
+                trans_score = self.transitions[next_tag].view(1, -1)
+                next_tag_var = forward_var + trans_score + emit_score
+                alphas_t.append(log_sum_exp(next_tag_var).view(1))
+            forward_var = torch.cat(alphas_t).view(1, -1)
+        terminal_var = forward_var + self.transitions[self.tag_to_ix[STOP_TAG]]
+        alpha = log_sum_exp(terminal_var)
+        return alpha
+
+    def _score_sentence(self, feats, tags):
+        score = torch.zeros(1)
+        tags = torch.cat(
+            [torch.tensor([self.tag_to_ix[START_TAG]], dtype=torch.long), tags])
+        for i, feat in enumerate(feats):
+            score += self.transitions[tags[i + 1], tags[i]] + feat[tags[i + 1]]
+        score += self.transitions[self.tag_to_ix[STOP_TAG], tags[-1]]
+        return score
+
+    def _viterbi_decode(self, feats):
+        backpointers = []
+        init_vvars = torch.full((1, self.tags_size), -10000.)
+        init_vvars[0][self.tag_to_ix[START_TAG]] = 0
+        forward_var = init_vvars
+
+        for feat in feats:
+            bptrs_t = []  # holds the backpointers for this step
+            viterbivars_t = []  # holds the viterbi variables for this step
+            for next_tag in range(self.tags_size):
+                next_tag_var = forward_var + self.transitions[next_tag]
+                best_tag_id = argmax(next_tag_var)
+                # 这里求出的是，如果next_tag 为某个标签的时候，当前最佳标签是哪个
+                bptrs_t.append(best_tag_id)
+                viterbivars_t.append(next_tag_var[0][best_tag_id].view(1))
+            forward_var = (torch.cat(viterbivars_t) + feat).view(1, -1)
+            backpointers.append(bptrs_t)
+        terminal_var = forward_var + \
+            self.transitions[self.tag_to_ix[STOP_TAG]]
+        best_tag_id = argmax(terminal_var)
+        path_score = terminal_var[0][best_tag_id]
+        best_path = [best_tag_id]
+        for bptrs_t in reversed(backpointers):
+            best_tag_id = bptrs_t[best_tag_id]
+            best_path.append(best_tag_id)
+
+        start = best_path.pop()
+        assert start == self.tag_to_ix[START_TAG]  # Sanity check
+        best_path.reverse()  # 把从后向前的路径正过来
+        return path_score, best_path
+
+    def neg_log_likelihood(self, feats, tags):
+        feats = self.hidden2tag(feats)
+        forward_score = self._forward_alg(feats)
+        gold_score = self._score_sentence(feats, tags)
+        return forward_score - gold_score
+
+    def forward(self, feats):  # dont confuse this with _forward_alg above.
+        feats = self.hidden2tag(feats)
+        score, tag_seq = self._viterbi_decode(feats)
+        return tag_seq
