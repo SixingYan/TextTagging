@@ -198,7 +198,8 @@ class EncoderRNN(nn.Module):
         self.embedding = nn.Embedding(input_size, in_hdim)
         self.bi = bi
         self.rnn = nn.LSTM(in_hdim, out_hdim, num_layers=num_layers,
-                           bidirectional=True if bi == 2 else False)
+                           bidirectional=True if bi == 2 else False,
+                           dropout=0.1)
         util.init_rnn(self.rnn)
 
     def forward(self, sentence, hidden):
@@ -250,8 +251,8 @@ class AttnDecoderRNN(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-        self.rnn = nn.GRU(self.hidden_size, self.hidden_size)
-        # util.init_rnn(self.rnn)
+        self.rnn = nn.GRU(self.hidden_size, self.hidden_size, dropout=0.3)
+        util.init_rnn(self.rnn)
 
         self.hid2tag = nn.Linear(self.hidden_size, self.tag_size)
         # util.init_linear(self.hid2tag)
@@ -268,6 +269,7 @@ class AttnDecoderRNN(nn.Module):
 
         output = F.relu(output)
         output, hidden = self.rnn(output, hidden)
+
         output = F.log_softmax(self.hid2tag(output[0]), dim=1)
         return output, hidden
 

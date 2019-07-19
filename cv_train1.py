@@ -116,15 +116,15 @@ def main(epoch_num=2, split_num=5):
         # init
         print('SPLIT {} --------------------------------------------------------'.format(sid + 1))
         direction = 2
-        en_indim = 100
-        en_outdim = 100
+        en_indim = 128
+        en_outdim = 128
         de_indim = en_outdim * direction
         encoder = EncoderRNN(len(word_to_ix), en_indim, en_outdim,
                              bi=direction, num_layers=2).to(device)
         decoder = AttnDecoderRNN(
-            de_indim, len(tag_to_ix), dropout=0.2, max_length=max_length).to(device)
-        encoder_optimizer = optim.SGD(encoder.parameters(), lr=0.01, weight_decay=1e-4)
-        decoder_optimizer = optim.SGD(decoder.parameters(), lr=0.01, weight_decay=1e-4)
+            de_indim, len(tag_to_ix), dropout=0.5, max_length=max_length).to(device)
+        encoder_optimizer = optim.Adam(encoder.parameters(), lr=0.001, weight_decay=1e-8)
+        decoder_optimizer = optim.Adam(decoder.parameters(), lr=0.001, weight_decay=1e-8)
 
         crf = CRF(decoder.hidden_size, tag_to_ix)
 
@@ -209,4 +209,4 @@ def main(epoch_num=2, split_num=5):
 
 
 if __name__ == '__main__':
-    test()
+    main()
