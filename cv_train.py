@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 import random
 
-from model1 import Model, EncoderRNN, AttnDecoderRNN
+from model1 import Model, EncoderRNN, AttnDecoderRNN, FocalLoss
 
 import util
 from const import tag_to_ix, ix_to_tag, START_TAG, STOP_TAG
@@ -14,6 +14,58 @@ import os
 import copy
 
 from sklearn.model_selection import train_test_split
+
+
+def test():
+    trn_X, trn_y, tst, word_to_ix = util.load()
+    device = 'cpu'
+    teacher_forcing_ratio = 0.3
+    trn_X, trn_y, tst, word_to_ix = util.load()
+    max_length = max(len(x) for x in trn_X)
+    loss_fn = nn.NLLLoss()
+    # train
+    direction = 2
+    en_indim = 100
+    en_outdim = 100
+    de_indim = en_outdim * direction
+    encoder = EncoderRNN(
+        len(word_to_ix), en_indim, en_outdim,
+        bi=direction, num_layers=2).to(device)
+    decoder = AttnDecoderRNN(
+        de_indim, len(tag_to_ix), dropout=0.1,
+        max_length=max_length).to(device)
+
+    encoder.load_state_dict(torch.load(
+        os.path.join(const.MODELPATH, 'encoder719_0.pytorch')))
+    decoder.load_state_dict(torch.load(
+        os.path.join(const.MODELPATH, 'decoder719_0.pytorch')))
+
+    tsttag = []
+    encoder.eval()
+    decoder.eval()
+    for i in tqdm(range(len(tst))):
+        x = torch.tensor(tst[i], dtype=torch.long)
+
+        eoutputs = torch.zeros(
+            max_length, encoder.in_hdim * direction, device=device)
+        for ei in range(len(x)):
+            eoutput, ehidden = encoder(x[ei], encoder.init_hidden())
+            ehidden = torch.cat([ehidden[0, :, :], ehidden[-1, :, :]], 1).unsqueeze(0)
+            eoutputs[ei] += eoutputs[0, 0]
+
+        dinput = torch.tensor([[tag_to_ix[START_TAG]]], device=device)
+        dhidden = ehidden
+
+        y_pred = []
+        for di in range(len(x)):
+            doutput, dhidden = decoder(
+                dinput, dhidden, eoutputs)
+            topv, topi = doutput.data.topk(1)
+            y_pred.append(topi.item())
+            dinput = topi.squeeze().detach()
+        tsttag.append([ix_to_tag[ix] for ix in y_pred])
+
+    util.output(tsttag)
 
 
 def eval(y_preds, y_trues):
@@ -105,9 +157,9 @@ def main(epoch_num=2, split_num=5):
         util.savemodel(model, 'bigrucrf717_{}.pytorch'.format(sid))
 
 
-def main1(epoch_num=3, split_num=5):
+def main1(epoch_num=2, split_num=5):
     device = 'cpu'
-    teacher_forcing_ratio = 0.3
+    teacher_forcing_ratio = 0.5
     trn_X, trn_y, tst, word_to_ix = util.load()
     max_length = max(len(x) for x in trn_X)
     loss_fn = nn.NLLLoss()
@@ -126,11 +178,12 @@ def main1(epoch_num=3, split_num=5):
         encoder = EncoderRNN(len(word_to_ix), en_indim, en_outdim,
                              bi=direction, num_layers=2).to(device)
         decoder = AttnDecoderRNN(
-            de_indim, len(tag_to_ix), dropout=0.1, max_length=max_length).to(device)
-        encoder_optimizer = optim.SGD(encoder.parameters(), lr=0.001, weight_decay=1e-4)
-        decoder_optimizer = optim.SGD(decoder.parameters(), lr=0.001, weight_decay=1e-4)
+            de_indim, len(tag_to_ix), dropout=0.2, max_length=max_length).to(device)
+        encoder_optimizer = optim.SGD(encoder.parameters(), lr=0.01, weight_decay=1e-4)
+        decoder_optimizer = optim.SGD(decoder.parameters(), lr=0.01, weight_decay=1e-4)
 
         tsize, vsize = len(trn_ixs), len(vld_ixs)
+        # loss_fn = FocalLoss()
         # epoch train
         for epoch in range(epoch_num):
             # train ++++++++++++++++++++
@@ -156,6 +209,9 @@ def main1(epoch_num=3, split_num=5):
                 dinput = torch.tensor([[tag_to_ix[START_TAG]]], device=device)
                 dhidden = ehidden
 
+                # doutputs = torch.zeros(
+                #    length, decoder.hidden_size, device=device)
+
                 use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
                 if use_teacher_forcing:
                     for di in range(length):
@@ -163,16 +219,19 @@ def main1(epoch_num=3, split_num=5):
                             dinput, dhidden, eoutputs)
                         loss += loss_fn(doutput, y[di].unsqueeze(0))
                         dinput = y[di]  # Teacher forcing
+                        #doutputs[di] = doutput[0, 0]
                 else:
                     for di in range(length):
                         doutput, decoder_hidden = decoder(
                             dinput, dhidden, eoutputs)
-
                         topv, topi = doutput.topk(1)
                         dinput = topi.squeeze().detach()  # detach from history as input
                         loss += loss_fn(doutput, y[di].unsqueeze(0))
+                        #doutputs[di] = doutput[0, 0]
                         if dinput.item() == STOP_TAG:
                             break
+
+                #loss = loss_fn(doutputs, y)
 
                 loss.backward()
                 encoder_optimizer.step()
@@ -188,8 +247,9 @@ def main1(epoch_num=3, split_num=5):
             for i in tqdm(np.random.permutation(vld_ixs)):
                 x = torch.tensor(trn_X[i], dtype=torch.long)
                 y = torch.tensor(trn_y[i], dtype=torch.long)
-                y_pred, loss = evalone(max_length, encoder, decoder, x, loss_fn=loss_fn, y=y)
-                vld_loss += loss.item() / vsize
+                y_pred, loss = evalone(max_length, encoder, decoder, x, direction=direction, loss_fn=None, y=y)
+                if loss != 0:
+                    vld_loss += loss.item() / vsize
                 y_preds.append([ix_to_tag[t] for t in y_pred])
                 y_trues.append(trn_y[i])
 
@@ -198,8 +258,8 @@ def main1(epoch_num=3, split_num=5):
             eval(y_preds, y_trues)
             print()
 
-        util.savemodel(encoder, 'encoder718_{}.pytorch'.format(sid))
-        util.savemodel(decoder, 'decoder718_{}.pytorch'.format(sid))
+        util.savemodel(encoder, 'encoder719_{}.pytorch'.format(sid))
+        util.savemodel(decoder, 'decoder719_{}.pytorch'.format(sid))
 
 
 def evalone(max_length, encoder, decoder, x, direction=1,
@@ -210,7 +270,7 @@ def evalone(max_length, encoder, decoder, x, direction=1,
         eoutput, ehidden = encoder(x[ei], encoder.init_hidden())
         ehidden = torch.cat([ehidden[0, :, :], ehidden[-1, :, :]], 1).unsqueeze(0)
         eoutputs[ei] += eoutputs[0, 0]
-        
+
     dinput = torch.tensor([[tag_to_ix[START_TAG]]], device=device)  # SOS
     dhidden = ehidden
     loss = 0

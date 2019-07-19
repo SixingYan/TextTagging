@@ -1,10 +1,10 @@
 """
 这里用于预训练词向量
 """
-import fasttext.FastText as fasttext
+import fastText.FastText as fasttext
 import os
 import const
-"""
+
 with open(os.path.join(const.DATAPATH, 'corpus.txt'), 'r') as f:
     lines = []
     for line in f:
@@ -12,7 +12,7 @@ with open(os.path.join(const.DATAPATH, 'corpus.txt'), 'r') as f:
 
 with open(os.path.join(const.DATAPATH, 'corp.txt'), 'w') as f:
     f.writelines(lines)
-"""
+
 #fasttext.train_unsupervised('data.txt', model='cbow')
 
 model = fasttext.train_unsupervised(os.path.join(const.DATAPATH, 'corp.txt'),
