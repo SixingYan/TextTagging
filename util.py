@@ -15,7 +15,7 @@ def retestmodel():
     pass
 
 
-def output(tsttag: List):
+def output(tsttag: List, name=''):
     """
 
     """
@@ -30,7 +30,7 @@ def output(tsttag: List):
         l = _merge(chars[i], tsttag[i][:len(chars[i])])
         lines.append(l + '\n')
 
-    with open(os.path.join(const.DATAPATH, 'submit.txt'), 'w') as f:
+    with open(os.path.join(const.DATAPATH, 'submit{}.txt'.format(name)), 'w') as f:
         f.writelines(lines)
 
 

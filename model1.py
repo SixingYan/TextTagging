@@ -180,7 +180,8 @@ class Model(nn.Module):
         nil = self.neg_log_likelihood(sentence, tags)
         return (1 - np.exp(-nil))**gamma * nil
 
-    def forward(self, sentence, lstm_feats=None):  # dont confuse this with _forward_alg above.
+    # dont confuse this with _forward_alg above.
+    def forward(self, sentence, lstm_feats=None):
         if lstm_feats is None:
             lstm_feats = self._get_lstm_features(sentence)
         score, tag_seq = self._viterbi_decode(lstm_feats)
@@ -190,34 +191,49 @@ class Model(nn.Module):
 class EncoderRNN(nn.Module):
 
     def __init__(self, input_size, in_hdim, out_hdim,
-                 device='cpu', bi=2, num_layers=2):
+                 device='cpu', bi=2, num_layers=2, dropout=0.1, 
+                 use_ngram=True, ngram_size=20000):
         super(EncoderRNN, self).__init__()
         self.num_layers = num_layers
-        self.in_hdim = in_hdim
+        self.in_hdim = in_hdim * (2 if use_ngram is True else 1)
+        self.out_hdim=out_hdim
+        #print(self.in_hdim)
         self.device = device
-        self.embedding = nn.Embedding(input_size, in_hdim)
+        self.wrd_embed = nn.Embedding(input_size, in_hdim)
+        util.init_embedding(self.wrd_embed)
+
+        self.ngram_embed = nn.Embedding(ngram_size, in_hdim)
+        util.init_embedding(self.ngram_embed)
+
         self.bi = bi
-        self.rnn = nn.LSTM(in_hdim, out_hdim, num_layers=num_layers,
-                           bidirectional=True if bi == 2 else False,
-                           dropout=0.1)
+        self.dropout = nn.Dropout(dropout)
+
+        self.rnn = nn.GRU(self.in_hdim, out_hdim, num_layers=num_layers,
+                           bidirectional=True if bi == 2 else False, dropout=dropout)
         util.init_rnn(self.rnn)
 
-    def forward(self, sentence, hidden):
-        embedded = self.embedding(sentence).view(1, 1, -1)
-        output = embedded
-        output, (hidden, cell) = self.rnn(output, hidden)
+    def forward(self, sentence, ngram, hidden):
+        wembed = self.wrd_embed(sentence).view(1, 1, -1)
+        ngembed = self.ngram_embed(ngram).view(1, 1, -1)
+        embedded = torch.cat([wembed, ngembed], dim=2)
+        output = self.dropout(embedded)
+        output, hidden = self.rnn(output, hidden)
+        output = F.log_softmax(output, dim=2)
         return output, hidden
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.in_hdim, device=self.device)
+        return nn.init.xavier_uniform_(
+            torch.zeros(self.bi * self.num_layers, 1,
+                        self.out_hdim, device=self.device),
+            gain=nn.init.calculate_gain('relu'))
 
     def init_hidden(self):
         return (nn.init.uniform_(
             torch.empty(
-                self.bi * self.num_layers, 1, self.in_hdim, device=self.device)),
+                self.bi * self.num_layers, 1, self.out_hdim, device=self.device)),
                 nn.init.uniform_(
             torch.empty(
-                self.bi * self.num_layers, 1, self.in_hdim, device=self.device)))
+                self.bi * self.num_layers, 1, self.out_hdim, device=self.device)))
 
         """
         return (nn.init.xavier_uniform_(
@@ -233,7 +249,7 @@ class EncoderRNN(nn.Module):
 
 class AttnDecoderRNN(nn.Module):
 
-    def __init__(self, hidden_size, tag_size, bi=1, dropout=0.1, max_length=1000):
+    def __init__(self, hidden_size, tag_size, bi=1, dropout=0.4, max_length=1000):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.tag_size = tag_size
@@ -241,21 +257,21 @@ class AttnDecoderRNN(nn.Module):
         self.bi = bi
 
         self.embedding = nn.Embedding(self.tag_size, self.hidden_size)
-        # util.init_embedding(self.embedding)
+        util.init_embedding(self.embedding)
 
         self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
-        # util.init_linear(self.attn)
+        util.init_linear(self.attn)
 
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
-        # util.init_linear(self.attn_combine)
+        util.init_linear(self.attn_combine)
 
         self.dropout = nn.Dropout(dropout)
 
-        self.rnn = nn.GRU(self.hidden_size, self.hidden_size, dropout=0.3)
+        self.rnn = nn.GRU(self.hidden_size, self.hidden_size)  # , dropout=0.3)
         util.init_rnn(self.rnn)
 
         self.hid2tag = nn.Linear(self.hidden_size, self.tag_size)
-        # util.init_linear(self.hid2tag)
+        util.init_linear(self.hid2tag)
 
     def forward(self, input, hidden, encoder_outputs):
         embedded = self.embedding(input).view(1, 1, -1)
@@ -269,76 +285,10 @@ class AttnDecoderRNN(nn.Module):
 
         output = F.relu(output)
         output, hidden = self.rnn(output, hidden)
-
+        output = self.dropout(output)
         output = F.log_softmax(self.hid2tag(output[0]), dim=1)
         return output, hidden
 
-    def initHidden(self):
-        return nn.init.uniform_(
-            torch.empty(1, 1, self.hidden_size, device=self.device))
-        """
-        return nn.init.xavier_uniform_(
-            torch.empty(1, 1, self.hidden_size, device=self.device),
-            gain=nn.init.calculate_gain('relu'))
-        """
-
-
-class FocalLoss(nn.Module):
-    r"""
-        This criterion is a implemenation of Focal Loss, which is proposed in 
-        Focal Loss for Dense Object Detection.
-
-            Loss(x, class) = - \alpha (1-softmax(x)[class])^gamma \log(softmax(x)[class])
-
-        The losses are averaged across observations for each minibatch.
-
-        Args:
-            alpha(1D Tensor, Variable) : the scalar factor for this criterion
-            gamma(float, double) : gamma > 0; reduces the relative loss for well-classiﬁed examples (p > .5), 
-                                   putting more focus on hard, misclassiﬁed examples
-            size_average(bool): By default, the losses are averaged over observations for each minibatch.
-                                However, if the field size_average is set to False, the losses are
-                                instead summed for each minibatch.
-
-
-    """
-
-    def __init__(self, class_num=4, alpha=None, gamma=2, size_average=True):
-        super(FocalLoss, self).__init__()
-        if alpha is None:
-            self.alpha = Variable(torch.ones(class_num, 1))
-        else:
-            if isinstance(alpha, Variable):
-                self.alpha = alpha
-            else:
-                self.alpha = Variable(alpha)
-        self.gamma = gamma
-        self.class_num = class_num
-        self.size_average = size_average
-
-    def forward(self, inputs, targets):
-        N = inputs.size(0)
-        C = inputs.size(1)
-        P = F.softmax(inputs, dim=1)
-
-        class_mask = inputs.data.new(N, C).fill_(0)
-        class_mask = Variable(class_mask)
-        ids = targets.view(-1, 1)
-        class_mask.scatter_(1, ids.data, 1.)
-
-        if inputs.is_cuda and not self.alpha.is_cuda:
-            self.alpha = self.alpha.cuda()
-        alpha = self.alpha[ids.data.view(-1)]
-        probs = (P * class_mask).sum(1).view(-1, 1)
-        log_p = probs.log()
-
-        batch_loss = -alpha * (torch.pow((1 - probs), self.gamma)) * log_p
-
-        if self.size_average:
-            loss = batch_loss.mean()
-        else:
-            loss = batch_loss.sum()
-        return loss
 
 
 class CRF(nn.Module):
@@ -349,8 +299,10 @@ class CRF(nn.Module):
         self.tags_size = len(tag_to_ix)
 
         self.hidden2tag = nn.Linear(hid_dim, self.tags_size)
+        util.init_linear(self.hidden2tag)
 
-        self.transitions = nn.Parameter(torch.nn.init.kaiming_uniform_(
+        #
+        self.transitions = nn.Parameter(torch.nn.init.uniform_(
             torch.empty(self.tags_size, self.tags_size)))
         self.transitions.data[tag_to_ix[START_TAG], :] = -10000
         self.transitions.data[:, tag_to_ix[STOP_TAG]] = -10000
