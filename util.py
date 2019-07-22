@@ -5,20 +5,66 @@ import pickle
 import torch
 from torch import nn
 import numpy as np
+import copy
+
+
+def load_pretrained(name, word_to_ix, embed_size=128):
+    import fasttext.FastText as fasttext
+    model = fasttext.load_model(os.path.join(
+        MODELPATH, '{}.bin'.format(name)))
+    embedding_matrix = np.zeros((len(word_to_ix), embed_size))
+    for w, ix in word_to_ix.items():
+        embedding_matrix[ix] = model[w]
+    return embedding_matrix
+
+
+def evalinfo(y_preds, y_trues):
+
+    assert len(y_preds) == len(y_trues)
+    stat = {'a': [0, 0], 'b': [0, 0], 'c': [0, 0]}
+    tags = ['a', 'b', 'c']
+    prec = {'a': [], 'b': [], 'c': []}
+    recl = {'a': [], 'b': [], 'c': []}
+    f1 = {'a': 0, 'b': 0, 'c': 0}
+    for j in range(len(y_preds)):
+        y_pred, y_true = y_preds[j], y_trues[j]
+        prestat, recstat = copy.copy(stat), copy.copy(stat)
+        for i in range(len(y_pred)):
+            t = ix_to_tag[int(y_true[i])]
+            p = ix_to_tag[int(y_pred[i])]
+            if p in tags:
+                prestat[p][1] += 1
+            if p in tags and p == t:
+                prestat[p][0] += 1
+                recstat[t][0] += 1
+            if t in tags:
+                recstat[t][1] += 1
+        for x in tags:
+            if recstat[x][1] != 0:
+                recl[x].append(recstat[x][0] / recstat[x][1])
+            if prestat[x][1] != 0:
+                prec[x].append(prestat[x][0] / prestat[x][1])
+    for x in tags:
+        prec[x] = 0 if len(prec[x]) == 0 else sum(prec[x]) / len(prec[x])
+        recl[x] = 0 if len(recl[x]) == 0 else sum(recl[x]) / len(recl[x])
+        f1[x] = (2 * prec[x] * recl[x]) / (prec[x] + recl[x] + 1e-8)
+
+    for x in tags:
+        print('TAG {} \t prec {:.4f} \t recl {:.4f} \t f1 {:.4f}'.format(
+            x, prec[x], recl[x], f1[x]))
+
+    print('AVG prec {:.4f} \t recl {:.4f} \t f1 {:.4f}'.format(
+        sum(prec[x] for x in tags) / 3,
+        sum(recl[x] for x in tags) / 3,
+        sum(f1[x] for x in tags) / 3))
 
 
 def savemodel(model, name):
     torch.save(model.state_dict(), os.path.join(const.MODELPATH, name))
 
 
-def retestmodel():
-    pass
-
-
 def output(tsttag: List, name=''):
-    """
-
-    """
+    """ """
     with open(os.path.join(const.DATAPATH, 'test.txt'), 'r') as f:
         lines = f.readlines()[:10]
         chars = [l.strip().split('_') for l in lines]
@@ -83,30 +129,20 @@ def toPickle(path, var):
         pickle.dump(var, f)
 
 
-def init_embedding(input_embedding):
-    """
-    Initialize embedding
-    """
-    bias = np.sqrt(3.0 / input_embedding.embedding_dim)
-    nn.init.uniform_(input_embedding.weight, -bias, bias)
+def init_embedding(embedding):
+    bias = np.sqrt(3.0 / embedding.embedding_dim)
+    nn.init.uniform_(embedding.weight, -bias, bias)
 
 
-def init_linear(input_linear):
-    """
-    Initialize linear transformation
-    这里weight基本都通过偏置来矫正了
-    """
-    bias = np.sqrt(6.0 / (input_linear.weight.size(0) +
-                          input_linear.weight.size(1)))
-    nn.init.uniform_(input_linear.weight, -bias, bias)
-
-    if input_linear.bias is not None:
-        # data：存储了Tensor，是本体的数据
-        # 将内置bias 初始化为0
-        input_linear.bias.data.zero_()
+def init_linear(linear):
+    bias = np.sqrt(6.0 / (linear.weight.size(0) +
+                          linear.weight.size(1)))
+    nn.init.uniform_(linear.weight, -bias, bias)
+    if linear.bias is not None:
+        linear.bias.data.zero_()
 
 
-def init_rnn(input_rnn, rnn='lstm'):
+def init_rnn(input_rnn, rnn='lstm', init_fn=nn.init.xavier_normal_):
     """
         Initialize lstm 
         但是为什么只初始化了两个权重，weight_ih_l[k] 和 weight_hh_l[k]
@@ -124,30 +160,27 @@ def init_rnn(input_rnn, rnn='lstm'):
     part_num = 4 if rnn == 'lstm' else 3
     # weight
     for ind in range(0, input_rnn.num_layers):
-        # 这是动态代码
-        # 类似于 执行 weight = input_lstm.weight_ih_l1
+        # 动态代码，类似于 执行 weight = input_lstm.weight_ih_l1
         weight = eval('input_rnn.weight_ih_l' + str(ind))
         hid_size = weight.size(0) // part_num
-
         for i in range(part_num):
-            nn.init.xavier_normal_(weight[hid_size * i:hid_size * (i + 1), :])
+            init_fn(weight[hid_size * i:hid_size * (i + 1), :])
 
         weight = eval('input_rnn.weight_hh_l' + str(ind))
         for i in range(part_num):
-            nn.init.xavier_normal_(weight[hid_size * i:hid_size * (i + 1), :])
+            init_fn(weight[hid_size * i:hid_size * (i + 1), :])
     if input_rnn.bidirectional:
         for ind in range(0, input_rnn.num_layers):
             weight = eval('input_rnn.weight_ih_l' + str(ind) + '_reverse')
             for i in range(part_num):
-                nn.init.xavier_normal_(
-                    weight[hid_size * i:hid_size * (i + 1), :])
+                init_fn(weight[hid_size * i:hid_size * (i + 1), :])
 
             weight = eval('input_rnn.weight_hh_l' + str(ind) + '_reverse')
             for i in range(part_num):
-                nn.init.xavier_normal_(
-                    weight[hid_size * i:hid_size * (i + 1), :])
+                init_fn(weight[hid_size * i:hid_size * (i + 1), :])
     # bias
     if input_rnn.bias:
+        # 这里已经使用了把bias设成1的trick
         for ind in range(0, input_rnn.num_layers):
             bias = eval('input_rnn.bias_ih_l' + str(ind))
             bias.data.zero_()

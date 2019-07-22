@@ -1,7 +1,7 @@
 import pprint
 import util
 
-import fasttext.FastText as fasttext
+#import fasttext.FastText as fasttext
 import torch.nn.functional as F
 import torch
 from torch import nn, optim
@@ -47,14 +47,14 @@ def load_pretrained(name, word_to_ix, embed_size=128):
 
 def main():
     epoch_num = 1
-    pretrianed_embedding = load_pretrained('cbow', word_to_ix)
+    #pretrianed_embedding = load_pretrained('cbow', word_to_ix)
     trn_ixs, vld_ixs = train_test_split(
         list(range(len(trn_X))), test_size=1 / 2,
         shuffle=True, random_state=10)
     model = NeuralNet(
         len(word_to_ix),
         loss_fn=nn.BCEWithLogitsLoss(reduction="sum"),
-        pre_word_embeds=pretrianed_embedding).to(device)
+        pre_word_embeds=None).to(device)
 
     optimizer = optim.Adam(
         model.parameters(), lr=0.01, weight_decay=1e-6)
@@ -161,14 +161,21 @@ class Attention(nn.Module):
         eij = torch.mm(
             x.contiguous().view(-1, feature_dim),
             self.weight
-        ).view(-1, step_dim)
+        )
+        print(x.size())
+        print(x.contiguous().view(-1, feature_dim).size())
+        print(self.weight.size())
+        print(eij.size())
+        eij = eij.view(-1, step_dim)
+
         if self.bias:
             eij = eij + self.b
         eij = torch.tanh(eij)
         a = torch.exp(eij)
         if mask is not None:
             a = a * mask
-        a = a / torch.sum(a, 1, keepdim=True) + 1e-10
+        a = F.softmax(a)
+        #a = a / torch.sum(a, 1, keepdim=True) + 1e-10
         weighted_input = x * torch.unsqueeze(a, -1)
         return torch.sum(weighted_input, 1)
 
@@ -180,9 +187,10 @@ class NeuralNet(nn.Module):
         super(NeuralNet, self).__init__()
         self.loss_fn = loss_fn
         self.embedding = nn.Embedding(vocab_size, embed_dim)
-        self.embedding.weight = nn.Parameter(
-            torch.tensor(pre_word_embeds, dtype=torch.float32))
-        self.embedding.weight.requires_grad = False
+        if pre_word_embeds is not None:
+            self.embedding.weight = nn.Parameter(
+                torch.tensor(pre_word_embeds, dtype=torch.float32))
+            self.embedding.weight.requires_grad = False
         self.embedding_dropout = nn.Dropout2d(dropout)
         self.lstm = nn.LSTM(embed_dim, hid_dim,
                             bidirectional=True, batch_first=True)
@@ -197,7 +205,7 @@ class NeuralNet(nn.Module):
 
     def _forward(self, x):
         h_embedding = self.embedding(x.unsqueeze(1))
-        #h_embedding = torch.squeeze(
+        # h_embedding = torch.squeeze(
         #    self.embedding_dropout(torch.unsqueeze(h_embedding, 0)))
 
         h_lstm, _ = self.lstm(h_embedding)

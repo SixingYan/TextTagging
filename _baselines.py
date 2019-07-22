@@ -481,6 +481,8 @@ class AttnDecoderRNN(nn.Module):
         # attn_applied 变成 1 by 1 by hidden_size
         attn_applied = torch.bmm(attn_weights.unsqueeze(0),
                                  encoder_outputs.unsqueeze(0))
+
+        # 使用concat的方式融合weight
         # output size 1 by (hidden_size + hidden_size)
         output = torch.cat((embedded[0], attn_applied[0]), 1)
         # attn_combine 线性映射 hidden_size*2 -> hidden_size
