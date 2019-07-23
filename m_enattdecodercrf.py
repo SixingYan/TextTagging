@@ -29,19 +29,27 @@ class EncoderAttDecoder(nn.Module):
         # init_embedding(self.en_wrd_embed)
         self.enrnn = nn.GRU(self.en_in_hdim, self.en_out_hdim, num_layers=num_layers,
                             bidirectional=True if bi == 2 else False)
-        #init_rnn(self.enrnn, 'GRU')
+        if use_init:
+            init_fns['rnn'](self.enrnn, 'gru')
+
         self.de_embed = nn.Embedding(self.tags_size, self.de_hdim)
-        # init_embedding(self.de_embed)
+        if use_init:
+            init_fns['embed'](self.de_embed)
+
         self.attn = nn.Linear(self.de_hdim * 2, self.max_length)
-        # init_linear(self.attn)
+
         self.attn_combine = nn.Linear(self.de_hdim * 2, self.de_hdim)
-        # init_linear(self.attn_combine)
+
         self.dernn = nn.GRU(self.de_hdim, self.de_hdim)  # , dropout=0.3)
-        #init_rnn(self.dernn, 'GRU')
+
         self.hid2tag = nn.Linear(self.de_hdim, self.tags_size)
-        # init_linear(self.hid2tag)
-        self.transitions = nn.Parameter(torch.nn.init.uniform_(
-            torch.empty(self.tags_size, self.tags_size, device=self.device)))
+        
+        if use_init:
+            tensor = torch.empty(self.tags_size, self.tags_size, device=self.device)
+            init_fns['linear'](tensor)
+        else:
+            tensor = torch.rand(self.tags_size, self.tags_size, device=self.device)
+        self.transitions = nn.Parameter(tensor)
         self.transitions.data[tag_to_ix[START_TAG], :] = -10000
         self.transitions.data[:, tag_to_ix[STOP_TAG]] = -10000
 
