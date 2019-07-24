@@ -1,4 +1,3 @@
-
 import torch
 from torch import nn
 
@@ -61,7 +60,8 @@ class BiLSTMCRF(nn.Module):
                 init_fn(torch.empty(2 * self.layer_num, batch_size, self.hid_dim, device=self.device)))
 
     def _forward_alg(self, feats):
-        init_alphas = torch.full((1, self.tags_size), -10000., device=self.device)
+        init_alphas = torch.full(
+            (1, self.tags_size), -10000., device=self.device)
         init_alphas[0][tag_to_ix[START_TAG]] = 0.
         forward_var = init_alphas
         for feat in feats:
@@ -105,7 +105,8 @@ class BiLSTMCRF(nn.Module):
 
     def _viterbi_decode(self, feats):
         backpointers = []
-        init_vvars = torch.full((1, self.tags_size), -10000., device=self.device)
+        init_vvars = torch.full((1, self.tags_size), -
+                                10000., device=self.device)
         init_vvars[0][tag_to_ix[START_TAG]] = 0
         forward_var = init_vvars
         for feat in feats:
