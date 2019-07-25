@@ -33,7 +33,7 @@ if use_pre:
     pretrianed_embedding = util.load_pretrained(pre_embed_name, word_to_ix)
 else:
     pretrianed_embedding = None
-
+# https://www.zhihu.com/question/67926031
 if use_alpha:
     tagix_to_frq = {0: 0, 1: 0, 2: 0, 3: 0, }
     for ix in trn_ixs:
