@@ -7,6 +7,9 @@ import torch.nn.functional as F
 # 支持多分类和二分类
 class FocalLoss(nn.Module):
     """
+    https://blog.csdn.net/Gentleman_Qin/article/details/87343004
+    https://www.cnblogs.com/king-lps/p/9497836.html
+    https://blog.csdn.net/qq_33278884/article/details/91572173
     This is a implementation of Focal Loss with smooth label cross entropy supported which is proposed in
     'Focal Loss for Dense Object Detection. (https://arxiv.org/abs/1708.02002)'
         Focal_Loss= -1*alpha*(1-pt)^gamma*log(pt)

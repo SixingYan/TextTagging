@@ -40,7 +40,7 @@ if use_alpha:
         for t in y[ix]:
             tagix_to_frq[t] += 1
     frqs = [tagix_to_frq[t] for t in [0, 1, 2, 3]]
-    alpha = [f / sum(frqs) for f in frqs]
+    alpha = [sum(frqs) / f for f in frqs]
 else:
     alpha = None
 
