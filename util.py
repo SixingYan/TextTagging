@@ -18,8 +18,40 @@ def load_pretrained(name, word_to_ix, embed_size=128):
     return embedding_matrix
 
 
-def evalinfo(y_preds, y_trues):
+def train(trn_X, trn_y, trn_ixs, model, optimizer, device='cpu'):
+    avg_loss = 0
+    tsize = len(trn_ixs)
+    for i in np.random.permutation(trn_ixs):  # tqdm(np.random.permutation(trn_ixs)):#
+        x = torch.tensor(trn_X[i], dtype=torch.long, device=device)
+        y = torch.tensor(trn_y[i], dtype=torch.long, device=device)
+        optimizer.zero_grad()
+        loss = model.loss(x, y)
+        avg_loss += loss.item() / tsize
+        loss.backward()
+        optimizer.step()
+    return model, avg_loss
 
+
+def evaluate(trn_X, trn_y, vld_ixs, model, device='cpu'):
+    vld_loss = 0
+    vsize = len(vld_ixs)
+    y_preds, y_trues = [], []
+    for i in np.random.permutation(vld_ixs):  # tqdm(np.random.permutation(vld_ixs)):#
+        x = torch.tensor(trn_X[i], dtype=torch.long, device=device)
+        y = torch.tensor(trn_y[i], dtype=torch.long, device=device)
+        y_pred = model(x)
+        loss = model.loss(x, y)
+        vld_loss += loss.item() / vsize
+        y_preds.append(y_pred[:])
+        y_trues.append(trn_y[i])
+    return vld_loss, y_preds, y_trues
+
+
+def eval_info_bs():
+    pass
+
+
+def eval_info(y_preds, y_trues, ix_to_tag):
     assert len(y_preds) == len(y_trues)
     stat = {'a': [0, 0], 'b': [0, 0], 'c': [0, 0]}
     tags = ['a', 'b', 'c']

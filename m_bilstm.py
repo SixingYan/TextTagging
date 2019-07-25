@@ -8,11 +8,11 @@ from typing import Dict
 class BiLSTM(nn.Module):
 
     def __init__(self, vocab_size: int, embed_dim=128, hid_dim=128,
-                 loss_fn=nn.NLLLoss(), num_layers=2,
+                 loss_fn=nn.NLLLoss(), num_layers=2, tag_size=4,
                  use_dropout=False, dropout=0.1,
                  pre_word_embeds=None,
                  use_subembed=True, subembed_dim=64, subhid_dim=64,
-                 use_init=False, init_fns: Dict):
+                 use_init=False, init_fns: Dict=None):
         super(BiLSTM, self).__init__()
 
         self.use_dropout = use_dropout
@@ -30,7 +30,7 @@ class BiLSTM(nn.Module):
         self.use_subembed = use_subembed
         if use_subembed:
             self.subembedding = nn.Embedding(vocab_size, subembed_dim)
-            self.subrnn = nn.GRU(subembed_dim, subhid_dim)
+            self.subnn = nn.GRU(subembed_dim, subhid_dim)
             embed_dim += subhid_dim
             if use_init:
                 init_fns['embed'](self.subembedding)
@@ -41,7 +41,7 @@ class BiLSTM(nn.Module):
         if use_init:
             init_fns['rnn'](self.rnn, 'lstm')
 
-        self.hid2tag = nn.Linear(hid_dim * 2, len(tag_to_ix))
+        self.hid2tag = nn.Linear(hid_dim * 2, tag_size)
         if use_init:
             init_fns['linear'](self.hid2tag)
 
@@ -49,10 +49,12 @@ class BiLSTM(nn.Module):
 
     def _forward(self, x):
         embeds = self.embedding(x).view(len(x), 1, -1)
+
         if self.use_subembed:
             _embed = self.subembedding(x)
-            sub_out, _ = self.subrnn(_embed.view(len(x), 1, -1))
+            sub_out, _ = self.subnn(_embed.view(len(x), 1, -1))
             embeds = torch.cat([embeds, sub_out], dim=2)
+
         if self.use_dropout:
             self.dropout(embeds)
 

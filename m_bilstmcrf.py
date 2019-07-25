@@ -31,6 +31,11 @@ class BiLSTMCRF(nn.Module):
         self.tags_size = len(tag_to_ix)
         self.layer_num = layer_num
         self.device = device
+        
+
+        self.use_dropout = use_dropout
+        if use_dropout:
+            self.dropout = nn.Dropout(dropout)
 
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         if pretrain_embed is not None:
@@ -39,6 +44,12 @@ class BiLSTMCRF(nn.Module):
             self.embedding.weight.requires_grad = False
         elif use_init:
             init_fns['embed'](self.embedding)
+
+        self.use_subembed = use_subembed
+        if use_subembed:
+            self.sub_embed = nn.Embedding(vocab_size, subembed_dim)
+            self.subnn = nn.GRU(subembed_dim, subhid_dim)
+            embed_dim += subhid_dim
 
         self.rnn = nn.LSTM(embed_dim, hid_dim,
                            num_layers=self.layer_num,
@@ -81,6 +92,12 @@ class BiLSTMCRF(nn.Module):
         hidden = self.init_hidden()
         embeds = self.embedding(x).view(
             len(x), 1, -1)
+
+        if self.use_subembed:
+            c_embed = self.sub_embed(x)
+            sub_out, _ = self.subnn(c_embed.view(len(x), 1, -1))
+            embeds = torch.cat([embeds, sub_out], dim=2)
+
         if self.use_dropout:
             self.dropout(embeds)
 
