@@ -50,71 +50,6 @@ def evaluate(trn_X, trn_y, vld_ixs, model, device='cpu'):
     return vld_loss, y_preds, y_trues
 
 
-def eval_info(y_preds, y_trues):
-    tags = ['a', 'b', 'c']
-    sgl_stat = np.zeros((3, 3))
-    all_stat = np.zeros((3,))
-    size = len(y_preds)
-    for idx in range(size):
-        y_pred, y_true = y_preds[idx], y_trues[idx]
-        t = ix_to_tag[int(ix) for ix in y_true]
-        p = ix_to_tag[int(ix) for ix in y_pred]
-        tp = precision_recall_fscore_support(t, p, labels=tags)
-        avgtp = precision_recall_fscore_support(
-            t, p, labels=tags, average='macro')
-
-        for i in enumerate(3):  # p,r,f
-            for j in enumerate(3):  # a, b, c
-                sgl_stat[i][j] += tp[i][j] / size
-
-        for i in enumerate(3):
-            all_stat[i] += avgtp[i] / size
-    for i, x in tags:
-        print('TAG {} \t prec {:.4f} \t recl {:.4f} \t f1 {:.4f}'.format(
-            x, sgl_stat[0][i], sgl_stat[1][i], sgl_stat[2][i]))
-    print('AVG prec {:.4f} \t recl {:.4f} \t f1 {:.4f}'.format(
-        all_stat[0], all_stat[1], all_stat[2])
-    print()
-
-def eval_info(y_preds, y_trues, ix_to_tag):
-    assert len(y_preds) == len(y_trues)
-    stat={'a': [0, 0], 'b': [0, 0], 'c': [0, 0]}
-    tags=['a', 'b', 'c']
-    prec={'a': [], 'b': [], 'c': []}
-    recl={'a': [], 'b': [], 'c': []}
-    f1={'a': 0, 'b': 0, 'c': 0}
-    for j in range(len(y_preds)):
-        y_pred, y_true=y_preds[j], y_trues[j]
-        prestat, recstat=copy.copy(stat), copy.copy(stat)
-        for i in range(len(y_pred)):
-            t=ix_to_tag[int(y_true[i])]
-            p=ix_to_tag[int(y_pred[i])]
-            if p in tags:
-                prestat[p][1] += 1
-            if p in tags and p == t:
-                prestat[p][0] += 1
-                recstat[t][0] += 1
-            if t in tags:
-                recstat[t][1] += 1
-        for x in tags:
-            if recstat[x][1] != 0:
-                recl[x].append(recstat[x][0] / recstat[x][1])
-            if prestat[x][1] != 0:
-                prec[x].append(prestat[x][0] / prestat[x][1])
-    for x in tags:
-        prec[x]=0 if len(prec[x]) == 0 else sum(prec[x]) / len(prec[x])
-        recl[x]=0 if len(recl[x]) == 0 else sum(recl[x]) / len(recl[x])
-        f1[x]=(2 * prec[x] * recl[x]) / (prec[x] + recl[x] + 1e-8)
-
-    for x in tags:
-        print('TAG {} \t prec {:.4f} \t recl {:.4f} \t f1 {:.4f}'.format(
-            x, prec[x], recl[x], f1[x]))
-
-    print('AVG prec {:.4f} \t recl {:.4f} \t f1 {:.4f}'.format(
-        sum(prec[x] for x in tags) / 3,
-        sum(recl[x] for x in tags) / 3,
-        sum(f1[x] for x in tags) / 3))
-
 
 def savemodel(model, name):
     torch.save(model.state_dict(), os.path.join(const.MODELPATH, name))
@@ -156,6 +91,12 @@ def _merge(chars: List, tags: List):
     for i in range(len(gtag)):
         lines.append('_'.join(gchar[i]) + '/' + gtag[i])
     return '  '.join(lines)
+
+
+def load_corp():
+    """"""
+    
+    pass
 
 
 def load():

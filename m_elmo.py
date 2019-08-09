@@ -1,5 +1,6 @@
 import torch
-from torch import nn
+from torch import nn, optim
+import torch.nn.functional as F
 from typing import List
 
 
@@ -14,29 +15,38 @@ class ELMoMixer(nn.Module):
 
         self.elmo = elmo
         self.normal_fn = normal_fn
-        self.scalar_parameters = ParametersList([
+        self.scalar_parameters = nn.ParameterList([
+            nn.Parameter(torch.FloatTensor([1/(num_layer+1)]),requires_grad=True) for _ in range(num_layer+1)
         ])
+        self.gamma = nn.Parameter(torch.FloatTensor([1.0]),requires_grad=True)
 
-        self.gamma = Parameter()
+    def forward(self, x):
+        """
+        x: torch.tensor([1,2,3], dtype=torch.long, device=device)
+        """
+        # 1. each layer representation
+        if len(x.size()) < 3:
+            x_batch = x.unsqueeze(0)
 
-    def forward(self, x_batch):
-        """"""
-        # each layer representation
-        _, features = self.elmo(x)
+        embed = self.elmo._embed(x_batch)
+        _, features = self.elmo(x_batch)
+        features = [torch.cat([torch.clone(embed),torch.clone(embed)],dim=2)]+features
 
-        # scalar_parameters normalization
+        # 2. scalar_parameters normalization
         # concat to softmax
-        norm_scalars = F.softmax(torch.concat(
+        norm_scalars = F.softmax(torch.cat(
             [p for p in self.scalar_parameters]), dim=0)
         # split to list
         norm_scalars = torch.split(norm_scalars, split_size_or_sections=1)
 
-        # weight sum
+        # 3. weight sum
         pieces = []
         for feat, scalar in zip(features, norm_scalars):
             pieces.append(self.normal_fn(feat) * scalar)
+        embedding= self.gamma * torch.sum(torch.cat(pieces,dim=0),dim=0)
+        print(embedding.size())
 
-        return self.gamma * torch.sum(pieces)
+        return embedding
 
 
 class ELMoChar(nn.Module):
@@ -44,29 +54,31 @@ class ELMoChar(nn.Module):
         所以取消了char-embedding的部分
     """
 
-    def __init__(self, num_layer: int,
+    def __init__(self, vocab_size:int, num_layer: int,
                  embed_dim: int, hid_dim: int,
                  loss_fn=nn.NLLLoss()):
         super(ELMoChar, self).__init__()
         self.loss_fn = loss_fn
         self.embedding = nn.Embedding(vocab_size, embed_dim)
-
-        self.nets = []
+        self.num_layer = num_layer
+        self.nets =  []
         for i in range(num_layer):
             fnn = nn.LSTM(embed_dim, hid_dim, batch_first=True)  # forward
             bnn = nn.LSTM(embed_dim, hid_dim, batch_first=True)  # backward
             self.nets.append([fnn, bnn])
-
+        
         self.linears = []
         for i in range(num_layer):
             fln = nn.Linear(hid_dim, embed_dim)
             bln = nn.Linear(hid_dim, embed_dim)
             self.linears.append([fln, bln])
 
-        self.embed2out = nn.Linear(embed, vocab_size)
+        self.embed2out = nn.Linear(hid_dim*2, vocab_size)
 
     def _embed(self, x_batch: torch.Tensor):
         """
+        x_batch: Batch(sentence length) * 1 (each char)
+        embedding 层，这里只考虑字符集别
         """
         embed = self.embedding(x_batch)
         return embed  # batch_size * 1 * embed_dim
@@ -83,7 +95,7 @@ class ELMoChar(nn.Module):
             boutput, _ = self.nets[i][1](bembed)
             bembed = self.linears[i][1](boutput)
 
-            rembed = torch.cat([fembed, bembed])
+            rembed = torch.cat([fembed, bembed],dim=2)
             features.append(rembed)
 
         return (foutput, boutput), features
@@ -105,10 +117,11 @@ class ELMoChar(nn.Module):
         (foutput, boutput), _ = self._feature(x_batch)
 
         #output = torch.mean([foutput,boutput],dim=1)
-        output = torch.concat([foutput, boutput], dim=1)
+        output = torch.cat([foutput, boutput], dim=2).squeeze()
+        #print(output.size())
         out = self.embed2out(output)
         out = F.log_softmax(out, dim=1)
-        loss = self.loss_fn(out, true)
+        loss = self.loss_fn(out, x_batch.squeeze())
         return loss
 
     def forward(self, x: torch.Tensor):
@@ -116,14 +129,29 @@ class ELMoChar(nn.Module):
         """
         这里是外部调用 Batch * 1
         """
-        if len(x.size()) < 2:
-            x_batch = x.unsqeence(0)
-        embed = self._embed(x_batch)
-        return self._feature(embed)
+        return self._feature(x)
 
 
-emlo = ELMoChar()
-emlo.eval()
-elmovector = ELMoMixer(emlo,)
+def test():
+    device = "cpu"#torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    emlo = ELMoChar(10,2,3,5)
+    emlo.train().to(device)
 
-elmovector(x)
+    optimizer = optim.Adam(emlo.parameters(), lr=0.1, weight_decay=1e-6)
+
+    x = [i for i in range(10)]
+    for epoch in range(1):
+        x_ts = torch.tensor(x, dtype=torch.long, device=device)
+        x_batch = torch.unsqueeze(x_ts,dim=1)
+        loss = emlo.loss(x_batch)
+        loss.backward()
+        optimizer.step()
+    print('complete')
+    emlo.eval()
+    elmovector = ELMoMixer(emlo,2)
+    x_ts = torch.tensor(x, dtype=torch.long, device=device)
+    vec = elmovector(x_ts)
+    print(vec)
+
+if __name__ == '__main__':
+    test()
