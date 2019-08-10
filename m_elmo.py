@@ -61,19 +61,20 @@ class ELMoChar(nn.Module):
         self.loss_fn = loss_fn
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.num_layer = num_layer
-        self.nets =  []
-        这里可能得注册到module里面才行
         
+        nets = []
         for i in range(num_layer):
             fnn = nn.LSTM(embed_dim, hid_dim, batch_first=True)  # forward
             bnn = nn.LSTM(embed_dim, hid_dim, batch_first=True)  # backward
-            self.nets.append([fnn, bnn])
-        
-        self.linears = []
+            nets.append(nn.ModuleList([fnn, bnn]))
+        self.nets =  nn.ModuleList(nets)
+
+        linears = []
         for i in range(num_layer):
             fln = nn.Linear(hid_dim, embed_dim)
             bln = nn.Linear(hid_dim, embed_dim)
-            self.linears.append([fln, bln])
+            self.linears.append(nn.ModuleList([fln, bln]))
+        self.linears = nn.ModuleList(linears)
 
         self.embed2out = nn.Linear(hid_dim*2, vocab_size)
 
