@@ -62,6 +62,8 @@ class ELMoChar(nn.Module):
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.num_layer = num_layer
         self.nets =  []
+        这里可能得注册到module里面才行
+        
         for i in range(num_layer):
             fnn = nn.LSTM(embed_dim, hid_dim, batch_first=True)  # forward
             bnn = nn.LSTM(embed_dim, hid_dim, batch_first=True)  # backward
@@ -91,6 +93,7 @@ class ELMoChar(nn.Module):
         for i in range(self.num_layer):
             foutput, _ = self.nets[i][0](fembed)
             fembed = self.linears[i][0](foutput)
+            #print(fembed.device)
 
             boutput, _ = self.nets[i][1](bembed)
             bembed = self.linears[i][1](boutput)
@@ -106,6 +109,9 @@ class ELMoChar(nn.Module):
         """
         fembed = self._embed(x_batch)
         bembed = self._embed(torch.flip(x_batch, (0,)))
+        
+        #print(fembed.device)
+        #print(bembed.device)
         output, features = self._biLM(fembed, bembed)
         return output, features
 
@@ -133,7 +139,7 @@ class ELMoChar(nn.Module):
 
 
 def test():
-    device = "cpu"#torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     emlo = ELMoChar(10,2,3,5)
     emlo.train().to(device)
 
@@ -142,16 +148,19 @@ def test():
     x = [i for i in range(10)]
     for epoch in range(1):
         x_ts = torch.tensor(x, dtype=torch.long, device=device)
+        #print(x_ts.device)
         x_batch = torch.unsqueeze(x_ts,dim=1)
         loss = emlo.loss(x_batch)
         loss.backward()
         optimizer.step()
+    '''
     print('complete')
     emlo.eval()
     elmovector = ELMoMixer(emlo,2)
     x_ts = torch.tensor(x, dtype=torch.long, device=device)
     vec = elmovector(x_ts)
     print(vec)
+    '''
 
 if __name__ == '__main__':
     test()

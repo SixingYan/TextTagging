@@ -25,7 +25,7 @@ for epoch in range(num_epoch):
         loss.backward()
         optimizer.step()
 
-
+    
 
 
 
