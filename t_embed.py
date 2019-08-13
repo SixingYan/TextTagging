@@ -24,13 +24,16 @@ optimizer = optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-6)
 
 for epoch in range(num_epoch):    
     avg_loss = 0
-    for i in tqdm(np.random.permutation(list(range(len(X))))):
+    for idx,i in enumerate(np.random.permutation(list(range(len(X))))): 
+        #tqdm(np.random.permutation(list(range(len(X))))):
         x_ts = torch.tensor(X[i], dtype=torch.long, device=device)
-        x_batch = torch.unsqueeze(x_ts,dim=1)
+        x_batch = torch.unsqueeze(x_ts, dim=1)
         loss = model.loss(x_batch)
         loss.backward()
         optimizer.step()
         avg_loss += loss.item() / len(X)
+        if idx % 3000 == 0:
+            print('Now is ', idx)
     print('Epoch {}/{} \t avg_loss {:.4f}'.format(
             epoch + 1, num_epoch, avg_loss))
-    util.savemodel(model, 'elmo_{}.pytorch'.format(epoch+1))
+    util.savemodel(model, 'elmo_{}_{}.pytorch'.format(epoch+1, round(avg_loss,3)))
