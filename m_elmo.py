@@ -73,7 +73,7 @@ class ELMoChar(nn.Module):
         for i in range(num_layer):
             fln = nn.Linear(hid_dim, embed_dim)
             bln = nn.Linear(hid_dim, embed_dim)
-            self.linears.append(nn.ModuleList([fln, bln]))
+            linears.append(nn.ModuleList([fln, bln]))
         self.linears = nn.ModuleList(linears)
 
         self.embed2out = nn.Linear(hid_dim*2, vocab_size)

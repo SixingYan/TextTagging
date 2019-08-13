@@ -93,22 +93,26 @@ def _merge(chars: List, tags: List):
     return '  '.join(lines)
 
 
-def load_corp():
+def load_corp(name='datagrad'):
     """"""
-    
-    pass
-
-
-def load():
-    """"""
-    trn_X=fromPickle(os.path.join(
-        const.DATAPATH, 'trn_X_token.pickle'))[:10]
-    trn_y=fromPickle(os.path.join(
-        const.DATAPATH, 'trn_y_token.pickle'))[:10]
-    tst=fromPickle(os.path.join(
-        const.DATAPATH, 'tst_X_token.pickle'))[:10]
+    path = os.path.join(const.DATAPATH,name) 
+    X=fromPickle(os.path.join(
+        path, 'corpus_token.pickle'))
     word_to_ix=fromPickle(os.path.join(
-        const.DATAPATH, 'word_to_ix.pickle'))
+        path, 'word_to_ix.pickle'))
+    return X, word_to_ix
+
+def load(name='datagrad'):
+    """"""
+    path = os.path.join(const.DATAPATH,name)
+    trn_X=fromPickle(os.path.join(
+        path, 'trn_X_token.pickle'))
+    trn_y=fromPickle(os.path.join(
+        path, 'trn_y_token.pickle'))
+    tst=fromPickle(os.path.join(
+        path, 'tst_X_token.pickle'))
+    word_to_ix=fromPickle(os.path.join(
+        path, 'word_to_ix.pickle'))
 
     return trn_X, trn_y, tst, word_to_ix
 

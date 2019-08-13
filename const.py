@@ -1,4 +1,4 @@
-#PAD_TAG = "<PAD>"
+PAD_TAG = "<PAD>"
 START_TAG = "<START>"
 STOP_TAG = "<STOP>"
 
